@@ -29,6 +29,11 @@ setup() {
     [ "$status" -eq 1 ]
 }
 
+@test "sudo adoption authorizes commands only on a foreground terminal" {
+    run python3 "$PROJECT_ROOT/tests/sudo_adoption_pty.py"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "has_sudo_session returns 1 when no sudo session" {
     # shellcheck disable=SC2329
     sudo() { return 1; }

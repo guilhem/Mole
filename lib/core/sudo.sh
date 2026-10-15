@@ -337,7 +337,14 @@ adopt_sudo_session() {
         MOLE_SUDO_ESTABLISHED="false"
     fi
 
-    if ! sudo -n -v 2> /dev/null; then
+    local adoption_rc=0
+    if [[ -t 0 ]] && declare -F mole_tty_is_foreground > /dev/null && mole_tty_is_foreground; then
+        # Validate command access before cleanup can hide a deferred prompt.
+        has_sudo_session || adoption_rc=$?
+    else
+        sudo -n -v 2> /dev/null || adoption_rc=$?
+    fi
+    if [[ $adoption_rc -ne 0 ]]; then
         MOLE_SUDO_ESTABLISHED="false"
         return 1
     fi
