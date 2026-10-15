@@ -69,6 +69,14 @@ _mole_bounded_sudo() {
     local sudo_bin=""
     sudo_bin=$(command -v sudo 2> /dev/null || true)
     [[ -n "$sudo_bin" ]] || return 127
+    if [[ "${_MOLE_SUDO_FOREGROUND:-0}" == "1" ]]; then
+        # Managed sudo may prompt even with -n; allow credential entry within
+        # the scan's existing overall deadline, preserving batch data on stdin.
+        duration=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
+            "${_MOLE_SUDO_FOREGROUND_DEADLINE:-}") || return $?
+        run_with_timeout --foreground-tty "$duration" "$sudo_bin" "$@" 2> /dev/tty
+        return $?
+    fi
     run_with_timeout "$duration" "$sudo_bin" "$@"
 }
 
@@ -3540,6 +3548,15 @@ safe_sudo_find_delete() {
     if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
         debug_log "Skipping sudo find/delete in test mode: $base_dir"
         return 0
+    fi
+
+    # Decide before probes redirect stdin and substitutions lose the spinner
+    # owner. Background callers keep the ordinary noninteractive timeout path.
+    local _MOLE_SUDO_FOREGROUND=0
+    local _MOLE_SUDO_FOREGROUND_DEADLINE="$deadline_seconds"
+    if [[ -t 0 ]] && mole_tty_is_foreground; then
+        _MOLE_SUDO_FOREGROUND=1
+        stop_section_spinner
     fi
 
     # An already-expired overall budget authorizes no privileged probe at all.

@@ -135,6 +135,7 @@ mole_tty_is_foreground() {
 # Uses gtimeout/timeout if available, falls back to shell-based implementation
 #
 # Args:
+#   --foreground-tty (internal, optional) - hand off /dev/tty without changing stdin
 #   $1 - duration in seconds (0 or invalid = no timeout)
 #   $@ - command and arguments to execute
 #
@@ -159,6 +160,11 @@ mole_tty_is_foreground() {
 #
 # For mission-critical timeouts, install coreutils.
 run_with_timeout() {
+    local foreground_tty=0
+    if [[ "${1:-}" == "--foreground-tty" ]]; then
+        foreground_tty=1
+        shift
+    fi
     local duration="${1:-0}"
     shift || true
 
@@ -192,7 +198,7 @@ run_with_timeout() {
             timeout_bin=""
         fi
     fi
-    if [[ -n "${timeout_bin:-}" ]]; then
+    if [[ -n "${timeout_bin:-}" && $foreground_tty -eq 0 ]]; then
         if [[ "${MO_DEBUG:-0}" == "1" ]]; then
             echo "[TIMEOUT] Running with ${duration}s timeout: $*" >&2
         fi
@@ -213,6 +219,7 @@ run_with_timeout() {
             use Time::HiRes qw(time sleep);
 
             my $duration = 0 + shift @ARGV;
+            my $foreground_tty = shift @ARGV;
             $duration = 1 if $duration <= 0;
             my $caller_pid = getppid();
 
@@ -225,6 +232,11 @@ run_with_timeout() {
             # next prompt read stops on SIGTTIN (issue #1222/#1218).
             my $my_pgrp = getpgrp();
             my $tty_fd = -t STDIN ? fileno(STDIN) : undef;
+            my $tty;
+            # Explicit foreground sudo may have data or /dev/null on stdin.
+            if ($foreground_tty && open($tty, "+<", "/dev/tty")) {
+                $tty_fd = fileno($tty);
+            }
             my $original_pgrp;
             if (defined $tty_fd) {
                 $original_pgrp = tcgetpgrp($tty_fd);
@@ -337,9 +349,12 @@ run_with_timeout() {
                 $poll_interval *= 2;
                 $poll_interval = 0.1 if $poll_interval > 0.1;
             }
-        ' "$duration" "$@"
+        ' "$duration" "$foreground_tty" "$@"
         return $?
     fi
+
+    # This mode needs the Perl backend to preserve stdin and reap descendants.
+    [[ $foreground_tty -eq 0 ]] || return 125
 
     # ========================================================================
     # Shell-based fallback implementation

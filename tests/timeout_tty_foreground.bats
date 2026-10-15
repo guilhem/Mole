@@ -8,6 +8,16 @@ setup() {
     export MO_DEBUG=0
 }
 
+@test "privileged cleanup: managed sudo prompts retain the foreground terminal" {
+    command -v python3 > /dev/null || skip "python3 required"
+    [[ -x /usr/bin/perl ]] || skip "perl required"
+
+    run python3 "$PROJECT_ROOT/tests/sudo_cleanup_tty_pty.py"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PASS: foreground prompts"* ]]
+}
+
 # Concurrent timeout helpers share one process group, so a helper that starts
 # while a sibling holds the terminal must not treat the sibling's child as the
 # terminal's original owner: restoring the terminal to that dead process group
