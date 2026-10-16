@@ -71,8 +71,16 @@ def check(case, redirected=False):
                 os.write(master, b'allow\n' if case == 'allow' else b'deny\n')
                 answered = True
             if process.poll() is not None:
+                # A closed pty can stay readable and return b'' (macOS) or
+                # raise EIO (Linux); stop draining at end of output.
                 while select.select([master], [], [], .05)[0]:
-                    output += os.read(master, 4096)
+                    try:
+                        chunk = os.read(master, 4096)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    output += chunk
                 break
         text = output.decode(errors='replace').replace('\r', '')
         assert process.returncode == 0, text
